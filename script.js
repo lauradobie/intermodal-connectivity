@@ -1,3 +1,5 @@
+console.log("script loaded ✅");
+
 // 1) Paste your Mapbox token here
 mapboxgl.accessToken = "PASTE_YOUR_MAPBOX_TOKEN_HERE";
 
