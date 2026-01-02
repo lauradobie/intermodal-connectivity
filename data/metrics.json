@@ -1,0 +1,17 @@
+{
+  "overall": {
+    "facility_count": 15488,
+    "true_intermodal_pct": 55.1
+  },
+  "by_urban_rural": {
+    "Metro": 60.9,
+    "Micro": 10.8,
+    "Non-CBSA": 5.4
+  },
+  "by_region": {
+    "Midwest": 58.9,
+    "Northeast": 55.5,
+    "South": 55.0,
+    "West": 52.0
+  }
+}
