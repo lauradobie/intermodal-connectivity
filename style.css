@@ -1,0 +1,84 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0b0f14;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+}
+
+#map { position: absolute; inset: 0; }
+
+#ui {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+  width: min(520px, calc(100% - 48px));
+}
+
+.headline {
+  font-size: 18px;
+  line-height: 1.2;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+#headline-value { font-weight: 700; }
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.toggles button {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.toggles button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,0.25);
+}
+
+.toggles button.active {
+  background: rgba(77,163,255,0.95);
+  color: #071018;
+  border-color: rgba(77,163,255,1);
+  font-weight: 600;
+}
+
+.subnote {
+  font-size: 12px;
+  opacity: 0.75;
+  padding-left: 4px;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  max-width: 280px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(10, 14, 20, 0.92);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.tooltip .t-title { font-weight: 700; margin-bottom: 6px; }
+.tooltip .t-row { display: flex; gap: 8px; opacity: 0.9; }
+.tooltip .t-label { width: 92px; opacity: 0.7; }
