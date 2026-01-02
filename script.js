@@ -1,7 +1,7 @@
 console.log("script loaded ✅");
 
 // 1) Paste your Mapbox token here
-mapboxgl.accessToken = "PASTE_YOUR_MAPBOX_TOKEN_HERE";
+mapboxgl.accessToken = "pk.eyJ1IjoibGF1cmFiZWFkb2JpZSIsImEiOiJjbWJyaHZlNXYwNmxpMmpwczlmMGMxNGRlIn0.yN5L1Kzhab1IH9TSiyZmqQ";
 
 // 2) Map setup
 const map = new mapboxgl.Map({
