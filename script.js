@@ -45,13 +45,48 @@ async function loadMetrics() {
 }
 
 map.on("load", async () => {
+  console.log("map loaded ✅");
+
+  // Load headline metric
   await loadMetrics();
 
-  // Load facilities GeoJSON
+  // Fetch GeoJSON
   const res = await fetch("data/facilities.geojson");
-  const data = await res.json();
+  console.log("geojson status:", res.status);
 
-  map.addSource("facilities", { type: "geojson", data });
+  const data = await res.json();
+  console.log("features:", data.features.length);
+
+  // Add source
+  map.addSource("facilities", {
+    type: "geojson",
+    data
+  });
+
+  // FORCE-VISIBLE DOTS
+  map.addLayer({
+    id: "facilities-layer",
+    type: "circle",
+    source: "facilities",
+    paint: {
+      "circle-radius": 6,
+      "circle-color": "#00ffff",
+      "circle-opacity": 0.95,
+      "circle-stroke-width": 1,
+      "circle-stroke-color": "#000"
+    }
+  });
+
+  // Zoom to data so you're not staring at empty ocean
+  const bounds = new mapboxgl.LngLatBounds();
+  for (const f of data.features) {
+    const c = f.geometry?.coordinates;
+    if (Array.isArray(c) && c.length === 2) bounds.extend(c);
+  }
+  map.fitBounds(bounds, { padding: 40, duration: 800 });
+
+  console.log("dots added + zoomed ✅");
+});
 
   // Layer
   map.addLayer({
