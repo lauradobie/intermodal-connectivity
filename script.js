@@ -15,23 +15,22 @@ map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 const ALL_MODES = ["Air", "Rail", "Bus", "Ferry", "Bike"];
 const selectedModes = new Set(ALL_MODES);
 
-// When context starts showing (you can raise/lower this)
+// Context behavior
 const CONTEXT_START_ZOOM = 7;
-
-// “Ink” color close to the map background (NOT white, NOT transparent)
-const CONTEXT_INK = "#141922"; // tweak darker/lighter if you want
+const CONTEXT_INK = "#141922"; // near-basemap “ink” (no additive brightness)
 
 async function fetchJsonWithFallback(paths) {
   let lastErr;
   for (const p of paths) {
     try {
+      console.log("Trying:", p);
       const res = await fetch(p);
       if (!res.ok) throw new Error(`${p} HTTP ${res.status}`);
       const json = await res.json();
-      console.log("loaded ✅", p, "features:", json?.features?.length);
+      console.log("Loaded ✅", p, "features:", json?.features?.length);
       return json;
     } catch (e) {
-      console.warn("failed ❌", p, e);
+      console.warn("Failed ❌", p, e);
       lastErr = e;
     }
   }
@@ -43,10 +42,7 @@ function selectedModesExpr() {
   if (modes.length === 0) return ["==", ["get", "id"], "__none__"];
 
   const modesStr = ["downcase", ["to-string", ["get", "modes"]]];
-  return [
-    "any",
-    ...modes.map(m => ["!=", ["index-of", m.toLowerCase(), modesStr], -1])
-  ];
+  return ["any", ...modes.map(m => ["!=", ["index-of", m.toLowerCase(), modesStr], -1])];
 }
 
 const hubExpr = [">=", ["to-number", ["get", "mode_count"]], 2];
@@ -63,77 +59,37 @@ function selectedNonHubExpr() {
   return ["all", ["!", hubExpr], selectedExpr()];
 }
 
-/**
- * Context visibility:
- * - Hidden below CONTEXT_START_ZOOM
- * - Fully opaque above it
- *
- * IMPORTANT: opacity here is 0 or 1 only (no stacking brightness).
- */
+// Hide context until zoomed in, then fully visible (no opacity stacking)
 function contextOpacityExpr() {
-  return [
-    "step",
-    ["zoom"],
-    0, // invisible by default
-    CONTEXT_START_ZOOM,
-    1 // fully visible when zoomed in
-  ];
+  return ["step", ["zoom"], 0, CONTEXT_START_ZOOM, 1];
 }
 
 function selectedOpacityExpr() {
-  return [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    2, 0.60,
-    6, 0.82,
-    9, 0.92,
-    12, 0.96
-  ];
+  return ["interpolate", ["linear"], ["zoom"], 2, 0.65, 6, 0.85, 9, 0.92, 12, 0.96];
 }
 
 function selectedRadiusExpr() {
-  return [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    2, 1.0,
-    4, 1.6,
-    6, 2.4,
-    9, 4.2,
-    12, 6.0
-  ];
+  return ["interpolate", ["linear"], ["zoom"], 2, 1.0, 4, 1.6, 6, 2.4, 9, 4.2, 12, 6.0];
 }
 
-// If you want hubs same size as others, keep these numbers identical:
+// hubs same size as others (per your ask)
 function hubRadiusExpr() {
-  return [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    2, 1.0,
-    4, 1.6,
-    6, 2.4,
-    9, 4.2,
-    12, 6.0
-  ];
+  return ["interpolate", ["linear"], ["zoom"], 2, 1.0, 4, 1.6, 6, 2.4, 9, 4.2, 12, 6.0];
 }
 
 function applyFilters() {
-  if (map.getLayer("selected-nonhub")) {
-    map.setFilter("selected-nonhub", selectedNonHubExpr());
-  }
-  if (map.getLayer("selected-hub")) {
-    map.setFilter("selected-hub", selectedHubExpr());
-  }
-  if (map.getLayer("context-layer")) {
-    // Context = everything NOT selected
-    map.setFilter("context-layer", ["!", selectedExpr()]);
-  }
+  if (map.getLayer("selected-nonhub")) map.setFilter("selected-nonhub", selectedNonHubExpr());
+  if (map.getLayer("selected-hub")) map.setFilter("selected-hub", selectedHubExpr());
+  if (map.getLayer("context-layer")) map.setFilter("context-layer", ["!", selectedExpr()]);
 }
 
 function wireToggleButtons() {
   const buttons = document.querySelectorAll(".toggles button");
+  if (!buttons.length) {
+    console.warn("No toggle buttons found (expected .toggles button)");
+    return;
+  }
+
   buttons.forEach(btn => {
     btn.addEventListener("click", () => {
       const mode = btn.dataset.mode;
@@ -144,80 +100,80 @@ function wireToggleButtons() {
       else selectedModes.add(mode);
 
       applyFilters();
-      console.log("selected modes:", Array.from(selectedModes));
     });
   });
 }
 
 map.on("load", async () => {
-  console.log("map loaded ✅");
+  try {
+    console.log("map loaded ✅");
 
-  const data = await fetchJsonWithFallback([
-    "data/facilities.geojson",
-    "facilities.geojson"
-  ]);
+    const data = await fetchJsonWithFallback([
+      "data/facilities.geojson",
+      "facilities.geojson"
+    ]);
 
-  map.addSource("facilities", { type: "geojson", data });
+    map.addSource("facilities", { type: "geojson", data });
 
-  // 1) Context layer (FAKE-OPAQUE INK — no additive brightness)
-  map.addLayer({
-    id: "context-layer",
-    type: "circle",
-    source: "facilities",
-    paint: {
-      "circle-color": CONTEXT_INK,
-      "circle-radius": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        2, 0.8,
-        6, 1.2,
-        9, 1.8,
-        12, 2.6
-      ],
-      "circle-opacity": contextOpacityExpr(),
-      "circle-stroke-width": 0 // strokes make stacks brighter; keep off
+    // Context (non-selected): fake-opaque ink (no strokes; strokes brighten with overlap)
+    map.addLayer({
+      id: "context-layer",
+      type: "circle",
+      source: "facilities",
+      paint: {
+        "circle-color": CONTEXT_INK,
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 0.8, 6, 1.2, 9, 1.8, 12, 2.6],
+        "circle-opacity": contextOpacityExpr(),
+        "circle-stroke-width": 0
+      }
+    });
+
+    // Selected non-hubs (blue)
+    map.addLayer({
+      id: "selected-nonhub",
+      type: "circle",
+      source: "facilities",
+      paint: {
+        "circle-color": "#4da3ff",
+        "circle-radius": selectedRadiusExpr(),
+        "circle-opacity": selectedOpacityExpr(),
+        "circle-stroke-width": 0.35,
+        "circle-stroke-color": "rgba(255,255,255,0.18)"
+      }
+    });
+
+    // Selected hubs (purple, same size)
+    map.addLayer({
+      id: "selected-hub",
+      type: "circle",
+      source: "facilities",
+      paint: {
+        "circle-color": "#b86bff",
+        "circle-radius": hubRadiusExpr(),
+        "circle-opacity": selectedOpacityExpr(),
+        "circle-stroke-width": 0.45,
+        "circle-stroke-color": "rgba(255,255,255,0.22)"
+      }
+    });
+
+    // Fit bounds safely
+    const bounds = new mapboxgl.LngLatBounds();
+    let added = 0;
+    for (const f of (data.features || [])) {
+      const c = f?.geometry?.coordinates;
+      if (Array.isArray(c) && c.length === 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+        bounds.extend(c);
+        added++;
+      }
     }
-  });
+    if (added > 0 && !bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 800 });
 
-  // 2) Selected non-hub layer (blue)
-  map.addLayer({
-    id: "selected-nonhub",
-    type: "circle",
-    source: "facilities",
-    paint: {
-      "circle-color": "#4da3ff",
-      "circle-radius": selectedRadiusExpr(),
-      "circle-opacity": selectedOpacityExpr(),
-      "circle-stroke-width": 0.35,
-      "circle-stroke-color": "rgba(255,255,255,0.18)"
-    }
-  });
+    wireToggleButtons();
+    applyFilters();
 
-  // 3) Selected hub layer (purple, same size unless you change hubRadiusExpr)
-  map.addLayer({
-    id: "selected-hub",
-    type: "circle",
-    source: "facilities",
-    paint: {
-      "circle-color": "#b86bff",
-      "circle-radius": hubRadiusExpr(),
-      "circle-opacity": selectedOpacityExpr(),
-      "circle-stroke-width": 0.45,
-      "circle-stroke-color": "rgba(255,255,255,0.22)"
-    }
-  });
-
-  // Fit bounds
-  const bounds = new mapboxgl.LngLatBounds();
-  for (const f of data.features || []) {
-    const c = f?.geometry?.coordinates;
-    if (Array.isArray(c) && c.length === 2) bounds.extend(c);
+    console.log("setup complete ✅");
+  } catch (err) {
+    console.error("🚨 setup failed:", err);
+    alert("Map loaded, but setup failed. Open DevTools → Console to see the error.");
   }
-  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 900 });
-
-  wireToggleButtons();
-  applyFilters();
-
-  console.log("setup complete ✅");
 });
