@@ -1,23 +1,21 @@
 console.log("script running ✅");
 
-// 1) Mapbox token
 mapboxgl.accessToken = "pk.eyJ1IjoibGF1cmFiZWFkb2JpZSIsImEiOiJjbWJyaHZlNXYwNmxpMmpwczlmMGMxNGRlIn0.yN5L1Kzhab1IH9TSiyZmqQ";
 
-// 2) Map setup
 const map = new mapboxgl.Map({
   container: "map",
   style: "mapbox://styles/mapbox/dark-v11",
   center: [-98, 39],
   zoom: 3
 });
+
 map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-// 3) Modes
 const ALL_MODES = ["Air", "Rail", "Bus", "Ferry", "Bike"];
 const selectedModes = new Set(ALL_MODES);
 
-// 4) Tooltip (optional—won’t break if missing)
-const tooltip = document.getElementById("tooltip");
+// Where “context” becomes visible (dim) instead of hidden
+const CONTEXT_START_ZOOM = 7;
 
 // ---------- Helpers ----------
 async function fetchJsonWithFallback(paths) {
@@ -27,7 +25,7 @@ async function fetchJsonWithFallback(paths) {
       const res = await fetch(p);
       if (!res.ok) throw new Error(`${p} HTTP ${res.status}`);
       const json = await res.json();
-      console.log("loaded ✅", p);
+      console.log("loaded ✅", p, "features:", json?.features?.length);
       return json;
     } catch (e) {
       console.warn("failed ❌", p, e);
@@ -37,78 +35,130 @@ async function fetchJsonWithFallback(paths) {
   throw lastErr || new Error("All fetch attempts failed");
 }
 
-// Robust mode match that works whether `modes` is an array OR a string.
-// We stringify and check substring membership.
-function selectedFilterExpression() {
+/**
+ * Robust mode match that works whether `modes` is:
+ * - an array
+ * - a JSON string
+ * - a comma-separated string
+ *
+ * We stringify modes and do substring match.
+ */
+function selectedModesExpr() {
   const modes = Array.from(selectedModes);
   if (modes.length === 0) return ["==", ["get", "id"], "__none__"];
 
   const modesStr = ["downcase", ["to-string", ["get", "modes"]]];
-  return [
-    "any",
-    ...modes.map(m => ["!=", ["index-of", m.toLowerCase(), modesStr], -1])
-  ];
+  return ["any", ...modes.map(m => ["!=", ["index-of", m.toLowerCase(), modesStr], -1])];
 }
 
-function applyFilter() {
-  if (!map.getLayer("facilities-layer")) return;
-  map.setFilter("facilities-layer", selectedFilterExpression());
+/** Hub = mode_count >= 2 */
+const hubExpr = [">=", ["to-number", ["get", "mode_count"]], 2];
+
+/** Selected = matches the currently selected modes */
+function selectedExpr() {
+  return selectedModesExpr();
 }
 
-// VALID zoom-based radius (interpolate is top-level)
-function radiusExpr() {
-  const base = [
-    "interpolate", ["linear"], ["zoom"],
-    2, 0.8,
-    4, 1.1,
-    6, 1.6,
-    9, 2.8,
-    12, 4.2
-  ];
-
-  // Hubs (2+ modes) get bigger
-  const bump = [
-    "case",
-    [">=", ["to-number", ["get", "mode_count"]], 2],
-    ["interpolate", ["linear"], ["zoom"],
-      2, 0.6,
-      6, 1.0,
-      9, 1.7,
-      12, 2.2
-    ],
-    0
-  ];
-
-  return ["+", base, bump];
+/** Selected hubs = hub AND selected */
+function selectedHubExpr() {
+  return ["all", hubExpr, selectedExpr()];
 }
 
-// VALID zoom-based opacity (interpolate is top-level)
-// This makes points visible overall while still letting you “feel” density:
-// - At low zoom: points are faint but present
-// - At higher zoom: stronger
-function opacityExpr() {
+/** Selected non-hubs = NOT hub AND selected */
+function selectedNonHubExpr() {
+  return ["all", ["!", hubExpr], selectedExpr()];
+}
+
+/**
+ * Context (non-selected) visibility:
+ * - zoomed out: hidden
+ * - zoomed in: dim
+ *
+ * IMPORTANT: This uses top-level interpolate (valid).
+ */
+function contextOpacityExpr() {
+  // 0 opacity below CONTEXT_START_ZOOM, then 0.14 at high zoom.
   return [
     "interpolate", ["linear"], ["zoom"],
-    2, 0.18,
-    4, 0.28,
-    6, 0.45,
-    9, 0.78,
-    12, 0.92
+    CONTEXT_START_ZOOM - 0.01, 0.0,
+    CONTEXT_START_ZOOM, 0.14,
+    12, 0.16
   ];
 }
 
-// ---------- UI wiring ----------
+/** Selected opacity: always strong */
+function selectedOpacityExpr() {
+  return [
+    "interpolate", ["linear"], ["zoom"],
+    2, 0.55,
+    6, 0.78,
+    9, 0.90,
+    12, 0.95
+  ];
+}
+
+/** Size scaling (stronger differentiation) */
+function selectedRadiusExpr() {
+  return [
+    "interpolate", ["linear"], ["zoom"],
+    2, 1.0,
+    4, 1.6,
+    6, 2.4,
+    9, 4.2,
+    12, 6.0
+  ];
+}
+
+/** Hubs are noticeably larger */
+function hubRadiusExpr() {
+  return [
+    "interpolate", ["linear"], ["zoom"],
+    2, 2.2,
+    4, 3.0,
+    6, 4.2,
+    9, 7.2,
+    12, 10.0
+  ];
+}
+
+// Apply filters after toggles change
+function applyFilters() {
+  if (map.getLayer("selected-nonhub")) {
+    map.setFilter("selected-nonhub", selectedNonHubExpr());
+    map.setPaintProperty("selected-nonhub", "circle-opacity", selectedOpacityExpr());
+  }
+  if (map.getLayer("selected-hub")) {
+    map.setFilter("selected-hub", selectedHubExpr());
+    map.setPaintProperty("selected-hub", "circle-opacity", selectedOpacityExpr());
+  }
+  if (map.getLayer("context-layer")) {
+    // Context = everything NOT selected
+    map.setFilter("context-layer", ["!", selectedExpr()]);
+    map.setPaintProperty("context-layer", "circle-opacity", contextOpacityExpr());
+  }
+}
+
 function wireToggleButtons() {
-  document.querySelectorAll(".toggles button").forEach(btn => {
+  const buttons = document.querySelectorAll(".toggles button");
+  if (!buttons.length) {
+    console.warn("No toggle buttons found. Check .toggles in index.html");
+    return;
+  }
+
+  buttons.forEach(btn => {
     btn.addEventListener("click", () => {
       const mode = btn.dataset.mode;
       if (!mode) return;
 
+      // Toggle UI
       btn.classList.toggle("active");
+
+      // Toggle state
       if (selectedModes.has(mode)) selectedModes.delete(mode);
       else selectedModes.add(mode);
 
-      applyFilter();
+      applyFilters();
+      console.log("selected modes:", Array.from(selectedModes));
     });
   });
 }
@@ -122,34 +172,67 @@ map.on("load", async () => {
     "facilities.geojson"
   ]);
 
-  console.log("feature count:", data?.features?.length);
-
   map.addSource("facilities", { type: "geojson", data });
 
+  // 1) Context layer (dim, only at higher zoom)
   map.addLayer({
-    id: "facilities-layer",
+    id: "context-layer",
+    type: "circle",
+    source: "facilities",
+    paint: {
+      "circle-color": "rgba(255,255,255,0.55)",
+      "circle-radius": [
+        "interpolate", ["linear"], ["zoom"],
+        2, 0.8,
+        6, 1.4,
+        9, 2.4,
+        12, 3.6
+      ],
+      "circle-opacity": contextOpacityExpr(),
+      "circle-stroke-width": 0.25,
+      "circle-stroke-color": "rgba(255,255,255,0.10)"
+    }
+  });
+
+  // 2) Selected non-hub layer (blue)
+  map.addLayer({
+    id: "selected-nonhub",
     type: "circle",
     source: "facilities",
     paint: {
       "circle-color": "#4da3ff",
-      "circle-radius": radiusExpr(),
-      "circle-opacity": opacityExpr(),
+      "circle-radius": selectedRadiusExpr(),
+      "circle-opacity": selectedOpacityExpr(),
       "circle-stroke-width": 0.35,
       "circle-stroke-color": "rgba(255,255,255,0.18)"
     }
   });
 
-  // Start with all selected
-  applyFilter();
-  wireToggleButtons();
+  // 3) Selected hub layer (purple, bigger, on top)
+  map.addLayer({
+    id: "selected-hub",
+    type: "circle",
+    source: "facilities",
+    paint: {
+      "circle-color": "#b86bff",
+      "circle-radius": hubRadiusExpr(),
+      "circle-opacity": selectedOpacityExpr(),
+      "circle-stroke-width": 0.45,
+      "circle-stroke-color": "rgba(255,255,255,0.22)"
+    }
+  });
 
-  // Fit to bounds so you definitely land on the data
+  // Fit bounds so dots are in view
   const bounds = new mapboxgl.LngLatBounds();
   for (const f of (data.features || [])) {
     const c = f?.geometry?.coordinates;
     if (Array.isArray(c) && c.length === 2) bounds.extend(c);
   }
   if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 900 });
+
+  // Wire UI + apply initial filters
+  wireToggleButtons();
+  applyFilters();
 
   console.log("setup complete ✅");
 });
