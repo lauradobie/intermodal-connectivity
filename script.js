@@ -1,7 +1,9 @@
 console.log("script running ✅");
 
+// 1) Mapbox token
 mapboxgl.accessToken = "pk.eyJ1IjoibGF1cmFiZWFkb2JpZSIsImEiOiJjbWJyaHZlNXYwNmxpMmpwczlmMGMxNGRlIn0.yN5L1Kzhab1IH9TSiyZmqQ";
 
+// 2) Map setup
 const map = new mapboxgl.Map({
   container: "map",
   style: "mapbox://styles/mapbox/dark-v11",
@@ -11,16 +13,13 @@ const map = new mapboxgl.Map({
 
 map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-// --- Modes you want to support in UI ---
-const ALL_MODES = ["Air", "Rail", "Bus", "Ferry", "Bike"];
+// 3) Selected modes (multi-select) — match your data (Bus, not Transit)
+const selectedModes = new Set(["Air", "Rail", "Bus", "Ferry", "Bike"]);
 
-// Multi-select state
-const selectedModes = new Set(ALL_MODES);
-
-// Tooltip (optional; safe if missing)
+// 4) Tooltip element (safe if missing)
 const tooltip = document.getElementById("tooltip");
 
-// Safely parse modes if it comes through as string
+// Helper: safely parse modes if it arrives as string
 function normalizeModes(value) {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") {
@@ -28,57 +27,50 @@ function normalizeModes(value) {
     if (s.startsWith("[")) {
       try { return JSON.parse(s); } catch {}
     }
-    // fallback: split on commas
     if (s.includes(",")) return s.split(",").map(x => x.trim()).filter(Boolean);
     return [s];
   }
   return [];
 }
 
-// Compute a dim factor: 1 if matches selected, else 0.12
+// 5) Dim vs highlight expression based on selected modes
 function dimExpression() {
   const modes = Array.from(selectedModes);
-  if (modes.length === 0) return 0.12;
+  if (modes.length === 0) return 0.10;
 
-  // If feature has ANY selected mode => opacity 0.85, else 0.10
   return [
     "case",
     ["any", ...modes.map(m => ["in", m, ["get", "modes"]])],
-    0.85,
-    0.10
+    0.85, // highlighted
+    0.10  // dimmed
   ];
 }
 
-// Update layer paint (dim vs highlight)
+// 6) Apply dimming (doesn't hide)
 function applyDim() {
   if (!map.getLayer("facilities-layer")) return;
   map.setPaintProperty("facilities-layer", "circle-opacity", dimExpression());
-  updateMetricFromSelection();
 }
 
-// Update headline metric based on current selection
-function updateMetricFromSelection() {
+// 7) Load metrics (headline)
+async function loadMetrics() {
   const el = document.getElementById("headline-value");
-  if (!el || !window.__FACILITY_DATA__) return;
+  if (!el) return;
 
-  const features = window.__FACILITY_DATA__.features || [];
-  const modes = Array.from(selectedModes);
+  try {
+    const res = await fetch("data/metrics.json");
+    if (!res.ok) throw new Error(`metrics.json HTTP ${res.status}`);
+    const m = await res.json();
 
-  // consider a facility "active" if it matches ANY selected mode
-  const isActive = (f) => {
-    const m = normalizeModes(f.properties?.modes);
-    return modes.length ? m.some(x => modes.includes(x)) : false;
-  };
-
-  // "Truly intermodal" = mode_count >= 2 (you can change to >=3 if you want stricter)
-  const active = features.filter(isActive);
-  const truly = active.filter(f => Number(f.properties?.mode_count) >= 2);
-
-  const pct = active.length ? Math.round((truly.length / active.length) * 100) : 0;
-  el.textContent = `${pct}%`;
+    const pct = m?.overall?.true_intermodal_pct;
+    el.textContent = (pct !== undefined && pct !== null) ? `${pct}%` : "—";
+  } catch (e) {
+    console.warn("metrics load failed:", e);
+    el.textContent = "—";
+  }
 }
 
-// Toggle button logic (multi-select)
+// 8) Wire toggle buttons (multi-select)
 function wireToggleButtons() {
   document.querySelectorAll(".toggles button").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -95,7 +87,7 @@ function wireToggleButtons() {
   });
 }
 
-// Tooltip hover
+// 9) Tooltip hover
 function wireTooltip() {
   if (!tooltip) return;
 
@@ -103,13 +95,14 @@ function wireTooltip() {
     map.getCanvas().style.cursor = "pointer";
     const f = e.features && e.features[0];
     if (!f) return;
-    const p = f.properties || {};
 
+    const p = f.properties || {};
     const modes = normalizeModes(p.modes).join(", ") || "—";
 
     tooltip.style.display = "block";
     tooltip.style.left = `${e.point.x + 12}px`;
     tooltip.style.top = `${e.point.y + 12}px`;
+
     tooltip.innerHTML = `
       <div class="t-title">${p.name ?? "Facility"}</div>
       <div class="t-row"><div class="t-label">Modes</div><div>${modes}</div></div>
@@ -125,18 +118,19 @@ function wireTooltip() {
   });
 }
 
+// 10) Main load: add data + layer
 map.on("load", async () => {
   console.log("map loaded ✅");
+  await loadMetrics();
 
-  // Load GeoJSON
   const res = await fetch("data/facilities.geojson");
   if (!res.ok) throw new Error(`facilities.geojson HTTP ${res.status}`);
   const data = await res.json();
-  window.__FACILITY_DATA__ = data;
+  console.log("features:", data.features?.length);
 
   map.addSource("facilities", { type: "geojson", data });
 
-  // Smaller dots + zoom-aware sizing
+  // Smaller dots (zoom-aware)
   map.addLayer({
     id: "facilities-layer",
     type: "circle",
@@ -163,7 +157,7 @@ map.on("load", async () => {
     }
   });
 
-  // Zoom to data bounds (fast cinematic settle)
+  // Zoom to data bounds so you see dots immediately
   const bounds = new mapboxgl.LngLatBounds();
   for (const f of (data.features || [])) {
     const c = f?.geometry?.coordinates;
@@ -173,7 +167,7 @@ map.on("load", async () => {
 
   wireToggleButtons();
   wireTooltip();
-  updateMetricFromSelection();
+  applyDim();
 
   console.log("setup complete ✅");
 });
