@@ -43,7 +43,6 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
-// Try both locations so dots don't disappear when files move
 async function fetchJsonWithFallback(paths) {
   let lastErr;
   for (const p of paths) {
@@ -60,11 +59,24 @@ async function fetchJsonWithFallback(paths) {
   throw lastErr || new Error("All fetch attempts failed");
 }
 
-// Expression: feature matches any selected mode
+/**
+ * Robust mode matching:
+ * We convert the 'modes' property to a lowercase string and search within it.
+ * Works whether modes is:
+ * - an array
+ * - a JSON string of an array
+ * - a comma-separated string
+ */
 function selectedExpression() {
   const modes = Array.from(selectedModes);
   if (modes.length === 0) return ["==", ["get", "id"], "__none__"];
-  return ["any", ...modes.map(m => ["in", m, ["get", "modes"]])];
+
+  const modesStr = ["downcase", ["to-string", ["get", "modes"]]];
+
+  return [
+    "any",
+    ...modes.map(m => ["!=", ["index-of", m.toLowerCase(), modesStr], -1])
+  ];
 }
 
 // Opacity: selected always visible. Non-selected hidden at low zoom, dim at high zoom.
@@ -74,14 +86,14 @@ function opacityExpression() {
   const nonSelectedOpacity = [
     "case",
     [">=", ["zoom"], DIM_START_ZOOM],
-    0.14, // dim when zoomed in
-    0.0   // hidden when zoomed out
+    0.14,
+    0.0
   ];
 
   return ["case", isSelected, 0.92, nonSelectedOpacity];
 }
 
-// Radius: small overall + noticeable bump for hubs (mode_count >= 2)
+// Radius: small overall + bump for hubs (mode_count >= 2)
 function radiusExpression() {
   const base = [
     "interpolate", ["linear"], ["zoom"],
@@ -96,10 +108,10 @@ function radiusExpression() {
     "case",
     [">=", ["to-number", ["get", "mode_count"]], 2],
     ["interpolate", ["linear"], ["zoom"],
-      2, 0.5,
-      6, 1.0,
-      9, 1.8,
-      12, 2.4
+      2, 0.6,
+      6, 1.1,
+      9, 2.0,
+      12, 2.6
     ],
     0
   ];
@@ -178,7 +190,6 @@ function wireTooltip() {
         <div class="row"><div class="label">Summary</div><div class="value">${escapeHtml(summary)}</div></div>
         <div class="row"><div class="label">Mode count</div><div class="value">${modeCount}</div></div>
         <div class="row"><div class="label">Score</div><div class="value">${score}</div></div>
-        <div class="row"><div class="label">Modes</div><div class="value">${escapeHtml(modes.join(", ") || "—")}</div></div>
       </div>
     `;
   });
@@ -222,7 +233,7 @@ map.on("load", async () => {
     }
   });
 
-  // Fit to bounds so dots are immediately in view
+  // Fit to bounds so you always see dots immediately
   const bounds = new mapboxgl.LngLatBounds();
   for (const f of (data.features || [])) {
     const c = f?.geometry?.coordinates;
