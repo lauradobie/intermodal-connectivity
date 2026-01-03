@@ -1,6 +1,6 @@
 console.log("script running ✅");
 
-// 1) Mapbox token
+// 1) Mapbox token (public)
 mapboxgl.accessToken = "pk.eyJ1IjoibGF1cmFiZWFkb2JpZSIsImEiOiJjbWJyaHZlNXYwNmxpMmpwczlmMGMxNGRlIn0.yN5L1Kzhab1IH9TSiyZmqQ";
 
 // 2) Map setup
@@ -13,13 +13,14 @@ const map = new mapboxgl.Map({
 
 map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-// 3) Selected modes (multi-select) — match your data (Bus, not Transit)
-const selectedModes = new Set(["Air", "Rail", "Bus", "Ferry", "Bike"]);
+// Modes available in your UI / data (note: your data uses "Bus", not "Transit")
+const ALL_MODES = ["Air", "Rail", "Bus", "Ferry", "Bike"];
+const selectedModes = new Set(ALL_MODES);
 
-// 4) Tooltip element (safe if missing)
+// Tooltip element
 const tooltip = document.getElementById("tooltip");
 
-// Helper: safely parse modes if it arrives as string
+// --- Helpers ---
 function normalizeModes(value) {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") {
@@ -33,44 +34,50 @@ function normalizeModes(value) {
   return [];
 }
 
-// 5) Dim vs highlight expression based on selected modes
-function dimExpression() {
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// Hybrid visibility controls
+// Below this zoom: hide non-selected completely (opacity 0)
+// At/above this zoom: non-selected dims (opacity 0.12)
+const DIM_START_ZOOM = 7;
+
+function selectedExpression() {
   const modes = Array.from(selectedModes);
-  if (modes.length === 0) return 0.10;
+  // if nothing selected, treat as "show nothing" (you can change to show all)
+  if (modes.length === 0) return ["==", ["get", "id"], "__none__"];
+  return ["any", ...modes.map(m => ["in", m, ["get", "modes"]])];
+}
 
-  return [
+function opacityExpression() {
+  const isSelected = selectedExpression();
+
+  // selected always visible
+  const selectedOpacity = 0.88;
+
+  // non-selected: 0 below DIM_START_ZOOM, else 0.12
+  const nonSelectedOpacity = [
     "case",
-    ["any", ...modes.map(m => ["in", m, ["get", "modes"]])],
-    0.85, // highlighted
-    0.10  // dimmed
+    [">=", ["zoom"], DIM_START_ZOOM],
+    0.12,
+    0.0
   ];
+
+  return ["case", isSelected, selectedOpacity, nonSelectedOpacity];
 }
 
-// 6) Apply dimming (doesn't hide)
-function applyDim() {
+function applyHybridVisibility() {
   if (!map.getLayer("facilities-layer")) return;
-  map.setPaintProperty("facilities-layer", "circle-opacity", dimExpression());
+  map.setPaintProperty("facilities-layer", "circle-opacity", opacityExpression());
 }
 
-// 7) Load metrics (headline)
-async function loadMetrics() {
-  const el = document.getElementById("headline-value");
-  if (!el) return;
-
-  try {
-    const res = await fetch("data/metrics.json");
-    if (!res.ok) throw new Error(`metrics.json HTTP ${res.status}`);
-    const m = await res.json();
-
-    const pct = m?.overall?.true_intermodal_pct;
-    el.textContent = (pct !== undefined && pct !== null) ? `${pct}%` : "—";
-  } catch (e) {
-    console.warn("metrics load failed:", e);
-    el.textContent = "—";
-  }
-}
-
-// 8) Wire toggle buttons (multi-select)
+// --- Toggle UI wiring ---
 function wireToggleButtons() {
   document.querySelectorAll(".toggles button").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -82,33 +89,63 @@ function wireToggleButtons() {
       if (selectedModes.has(mode)) selectedModes.delete(mode);
       else selectedModes.add(mode);
 
-      applyDim();
+      applyHybridVisibility();
     });
   });
 }
 
-// 9) Tooltip hover
+// --- Tooltip wiring ---
+function buildModeChips(modesArr) {
+  if (!Array.isArray(modesArr) || modesArr.length === 0) return "";
+  return modesArr.map(m => `<span class="chip">${escapeHtml(m)}</span>`).join("");
+}
+
 function wireTooltip() {
   if (!tooltip) return;
 
   map.on("mousemove", "facilities-layer", (e) => {
-    map.getCanvas().style.cursor = "pointer";
     const f = e.features && e.features[0];
     if (!f) return;
 
+    // If hovering a non-selected point at low zoom, it shouldn't be visible anyway
+    map.getCanvas().style.cursor = "pointer";
+
     const p = f.properties || {};
-    const modes = normalizeModes(p.modes).join(", ") || "—";
+    const name = escapeHtml(p.name ?? "Facility");
+
+    const state = escapeHtml(p.state ?? "—");
+    const region = escapeHtml(p.region ?? "—");
+    const urban = escapeHtml(p.urban_rural ?? "—");
+
+    const modes = normalizeModes(p.modes);
+    const chips = buildModeChips(modes);
+
+    const modeCount = escapeHtml(p.mode_count ?? "—");
+    const score = escapeHtml(p.connectivity_score ?? "—");
+
+    // Editorial “summary” line
+    const summary =
+      Number(p.mode_count) >= 2
+        ? `${modeCount}-mode intermodal hub`
+        : `Single-mode facility`;
 
     tooltip.style.display = "block";
     tooltip.style.left = `${e.point.x + 12}px`;
     tooltip.style.top = `${e.point.y + 12}px`;
 
     tooltip.innerHTML = `
-      <div class="t-title">${p.name ?? "Facility"}</div>
-      <div class="t-row"><div class="t-label">Modes</div><div>${modes}</div></div>
-      <div class="t-row"><div class="t-label">Score</div><div>${p.connectivity_score ?? "—"}</div></div>
-      <div class="t-row"><div class="t-label">Region</div><div>${p.region ?? "—"}</div></div>
-      <div class="t-row"><div class="t-label">Area type</div><div>${p.urban_rural ?? "—"}</div></div>
+      <div class="t-title">${name}</div>
+      <div class="t-loc">${state} • ${region} • ${urban}</div>
+
+      <div class="chips">${chips}</div>
+
+      <div class="divider"></div>
+
+      <div class="rows">
+        <div class="row"><div class="label">Summary</div><div class="value">${escapeHtml(summary)}</div></div>
+        <div class="row"><div class="label">Mode count</div><div class="value">${modeCount}</div></div>
+        <div class="row"><div class="label">Score</div><div class="value">${score}</div></div>
+      </div>
     `;
   });
 
@@ -118,56 +155,50 @@ function wireTooltip() {
   });
 }
 
-// 10) Main load: add data + layer
+// --- Main load ---
 map.on("load", async () => {
   console.log("map loaded ✅");
-  await loadMetrics();
 
   const res = await fetch("data/facilities.geojson");
   if (!res.ok) throw new Error(`facilities.geojson HTTP ${res.status}`);
   const data = await res.json();
-  console.log("features:", data.features?.length);
+  console.log("feature count:", data.features?.length);
 
   map.addSource("facilities", { type: "geojson", data });
 
-  // Smaller dots (zoom-aware)
+  // Single neutral color (selected vs not is handled by opacity)
   map.addLayer({
     id: "facilities-layer",
     type: "circle",
     source: "facilities",
     paint: {
+      // smaller dots to reduce overlap, zoom-aware
       "circle-radius": [
         "interpolate", ["linear"], ["zoom"],
-        2, 1.0,
-        4, 1.6,
-        6, 2.4,
-        9, 4.2,
-        12, 6.0
+        2, 0.8,
+        4, 1.2,
+        6, 1.8,
+        9, 3.2,
+        12, 5.0
       ],
-      "circle-color": [
-        "interpolate", ["linear"], ["get", "mode_count"],
-        1, "#4da3ff",
-        2, "#8b5cf6",
-        3, "#22c55e",
-        4, "#facc15"
-      ],
-      "circle-opacity": dimExpression(),
-      "circle-stroke-width": 0.5,
-      "circle-stroke-color": "rgba(255,255,255,0.22)"
+      "circle-color": "#4da3ff",
+      "circle-opacity": opacityExpression(),
+      "circle-stroke-width": 0.4,
+      "circle-stroke-color": "rgba(255,255,255,0.20)"
     }
   });
 
-  // Zoom to data bounds so you see dots immediately
+  // Fly to data bounds on load (cinematic settle)
   const bounds = new mapboxgl.LngLatBounds();
   for (const f of (data.features || [])) {
     const c = f?.geometry?.coordinates;
     if (Array.isArray(c) && c.length === 2) bounds.extend(c);
   }
-  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 50, duration: 900 });
+  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 900 });
 
   wireToggleButtons();
   wireTooltip();
-  applyDim();
+  applyHybridVisibility();
 
   console.log("setup complete ✅");
 });
