@@ -2,33 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Connected or Cut Off?</title>
+  <title>U.S. Intermodal Connections</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<div id="map"></div>
+  <div id="map"></div>
+
+  <!-- Hero overlay -->
   <div id="hero">
-  <div class="hero-title">U.S. Intermodal Connections</div>
-  <div class="hero-subtitle">Where air, rail, and bus actually meet</div>
-  <div class="hero-metric">
-    <span id="headline-value">—</span> facilities are truly intermodal (2+ modes)
+    <div class="hero-title">U.S. Intermodal Connections</div>
+    <div class="hero-subtitle">Where air, rail, and bus actually meet</div>
+
+    <div class="toggles" aria-label="Transportation mode toggles">
+      <button data-mode="Air" class="active">Air</button>
+      <button data-mode="Rail" class="active">Rail</button>
+      <button data-mode="Bus" class="active">Bus</button>
+      <button data-mode="Ferry" class="active">Ferry</button>
+      <button data-mode="Bike" class="active">Bike</button>
+    </div>
   </div>
 
-  <div class="toggles" aria-label="Transportation mode toggles">
-    <button data-mode="Air" class="active">Air</button>
-    <button data-mode="Rail" class="active">Rail</button>
-    <button data-mode="Bus" class="active">Bus</button>
-    <button data-mode="Ferry" class="active">Ferry</button>
-    <button data-mode="Bike" class="active">Bike</button>
-  </div>
-</div>
+  <!-- Tooltip -->
+  <div id="tooltip" class="tooltip" style="display:none;"></div>
 
-
-<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-<script src="script.js"></script>
-
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
