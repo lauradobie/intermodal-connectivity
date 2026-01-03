@@ -109,7 +109,7 @@ function selectedRadiusExpr() {
   ];
 }
 
-/** Hubs are noticeably larger */
+/** Hubs are the same size
 function hubRadiusExpr() {
   return [
     "interpolate", ["linear"], ["zoom"],
