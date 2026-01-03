@@ -12,7 +12,7 @@
 
   <div id="map"></div>
 
-  <!-- Hero overlay -->
+  <!-- Title + toggles (NO background box) -->
   <div id="hero">
     <div class="hero-title">U.S. Intermodal Connections</div>
 
@@ -23,25 +23,25 @@
       <button data-mode="Ferry" class="active">Ferry</button>
       <button data-mode="Bike" class="active">Bike</button>
     </div>
+  </div>
 
-    <!-- Key / legend -->
-    <div id="legend" aria-label="Legend">
-      <div class="legend-title">Key</div>
+  <!-- Legend moved to bottom-left -->
+  <div id="legend" aria-label="Legend">
+    <div class="legend-title">Key</div>
 
-      <div class="legend-row">
-        <span class="legend-dot legend-dot--selected"></span>
-        <span class="legend-text">Selected facilities</span>
-      </div>
+    <div class="legend-row">
+      <span class="legend-dot legend-dot--selected"></span>
+      <span class="legend-text">Selected facilities</span>
+    </div>
 
-      <div class="legend-row">
-        <span class="legend-dot legend-dot--context"></span>
-        <span class="legend-text">Context facilities (only visible when zoomed in)</span>
-      </div>
+    <div class="legend-row">
+      <span class="legend-dot legend-dot--context"></span>
+      <span class="legend-text">Context facilities (only visible when zoomed in)</span>
+    </div>
 
-      <div class="legend-row">
-        <span class="legend-dot legend-dot--hub"></span>
-        <span class="legend-text">Intermodal hub (2+ modes)</span>
-      </div>
+    <div class="legend-row">
+      <span class="legend-dot legend-dot--hub"></span>
+      <span class="legend-text">Intermodal hub (2+ modes)</span>
     </div>
   </div>
 
