@@ -113,11 +113,11 @@ function selectedRadiusExpr() {
 function hubRadiusExpr() {
   return [
     "interpolate", ["linear"], ["zoom"],
-    2, 2.2,
-    4, 3.0,
-    6, 4.2,
-    9, 7.2,
-    12, 10.0
+   2, 1.0,
+   4, 1.6,
+   6, 2.4,
+   9, 4.2,
+   12, 6.0
   ];
 }
 
