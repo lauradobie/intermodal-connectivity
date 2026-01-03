@@ -1,6 +1,6 @@
 console.log("script running ✅");
 
-// Mapbox token (public)
+// Mapbox token
 mapboxgl.accessToken = "pk.eyJ1IjoibGF1cmFiZWFkb2JpZSIsImEiOiJjbWJyaHZlNXYwNmxpMmpwczlmMGMxNGRlIn0.yN5L1Kzhab1IH9TSiyZmqQ";
 
 const map = new mapboxgl.Map({
@@ -12,16 +12,12 @@ const map = new mapboxgl.Map({
 
 map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-// Your dataset uses "Bus" (not "Transit")
 const ALL_MODES = ["Air", "Rail", "Bus", "Ferry", "Bike"];
 const selectedModes = new Set(ALL_MODES);
 
-// Tooltip element
 const tooltip = document.getElementById("tooltip");
 
-// Hybrid rule:
-// - below this zoom: non-selected are hidden (opacity 0)
-// - at/above this zoom: non-selected are dim (opacity 0.12)
+// Hybrid settings
 const DIM_START_ZOOM = 7;
 
 // ---- Helpers ----
@@ -47,53 +43,68 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
-// Expression: true if feature matches ANY selected mode
+// Try both locations so dots don't disappear when files move
+async function fetchJsonWithFallback(paths) {
+  let lastErr;
+  for (const p of paths) {
+    try {
+      const res = await fetch(p);
+      if (!res.ok) throw new Error(`${p} HTTP ${res.status}`);
+      console.log(`loaded ✅ ${p}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      console.warn(`failed ❌ ${p}`, e);
+    }
+  }
+  throw lastErr || new Error("All fetch attempts failed");
+}
+
+// Expression: feature matches any selected mode
 function selectedExpression() {
   const modes = Array.from(selectedModes);
   if (modes.length === 0) return ["==", ["get", "id"], "__none__"];
   return ["any", ...modes.map(m => ["in", m, ["get", "modes"]])];
 }
 
-// Opacity: selected always visible; non-selected hidden at low zoom, dim at high zoom
+// Opacity: selected always visible. Non-selected hidden at low zoom, dim at high zoom.
 function opacityExpression() {
   const isSelected = selectedExpression();
 
   const nonSelectedOpacity = [
     "case",
     [">=", ["zoom"], DIM_START_ZOOM],
-    0.12, // dim when zoomed in
+    0.14, // dim when zoomed in
     0.0   // hidden when zoomed out
   ];
 
-  return ["case", isSelected, 0.9, nonSelectedOpacity];
+  return ["case", isSelected, 0.92, nonSelectedOpacity];
 }
 
-// Radius: smaller overall + bump hubs (mode_count >= 2)
+// Radius: small overall + noticeable bump for hubs (mode_count >= 2)
 function radiusExpression() {
-  // base radius by zoom (small)
   const base = [
     "interpolate", ["linear"], ["zoom"],
-    2, 0.8,
-    4, 1.1,
-    6, 1.6,
-    9, 2.8,
-    12, 4.2
+    2, 0.9,
+    4, 1.2,
+    6, 1.7,
+    9, 3.0,
+    12, 4.6
   ];
 
-  // bump for hubs (2+ modes). Small but noticeable.
-  const bump = [
+  const hubBump = [
     "case",
     [">=", ["to-number", ["get", "mode_count"]], 2],
     ["interpolate", ["linear"], ["zoom"],
-      2, 0.2,
-      6, 0.6,
-      9, 1.2,
-      12, 1.8
+      2, 0.5,
+      6, 1.0,
+      9, 1.8,
+      12, 2.4
     ],
     0
   ];
 
-  return ["+", base, bump];
+  return ["+", base, hubBump];
 }
 
 function applyHybrid() {
@@ -118,7 +129,7 @@ function wireToggleButtons() {
   });
 }
 
-// ---- Tooltip wiring (clear hierarchy + chips + extra info) ----
+// ---- Tooltip wiring ----
 function buildModeChips(modesArr) {
   if (!Array.isArray(modesArr) || modesArr.length === 0) return "";
   return modesArr.map(m => `<span class="chip">${escapeHtml(m)}</span>`).join("");
@@ -151,12 +162,6 @@ function wireTooltip() {
         ? `${modeCount}-mode intermodal hub`
         : "Single-mode facility";
 
-    // Optional: a slightly more narrative line
-    const nuance =
-      (p.urban_rural === "Non-CBSA")
-        ? "Outside metro areas (Non-CBSA)"
-        : (p.urban_rural ? `Located in a ${escapeHtml(p.urban_rural)} area` : "");
-
     tooltip.style.display = "block";
     tooltip.style.left = `${e.point.x + 12}px`;
     tooltip.style.top = `${e.point.y + 12}px`;
@@ -171,9 +176,9 @@ function wireTooltip() {
 
       <div class="rows">
         <div class="row"><div class="label">Summary</div><div class="value">${escapeHtml(summary)}</div></div>
-        ${nuance ? `<div class="row"><div class="label">Context</div><div class="value">${escapeHtml(nuance)}</div></div>` : ""}
         <div class="row"><div class="label">Mode count</div><div class="value">${modeCount}</div></div>
         <div class="row"><div class="label">Score</div><div class="value">${score}</div></div>
+        <div class="row"><div class="label">Modes</div><div class="value">${escapeHtml(modes.join(", ") || "—")}</div></div>
       </div>
     `;
   });
@@ -188,9 +193,18 @@ function wireTooltip() {
 map.on("load", async () => {
   console.log("map loaded ✅");
 
-  const res = await fetch("data/facilities.geojson");
-  if (!res.ok) throw new Error(`facilities.geojson HTTP ${res.status}`);
-  const data = await res.json();
+  let data;
+  try {
+    data = await fetchJsonWithFallback([
+      "data/facilities.geojson",
+      "facilities.geojson"
+    ]);
+  } catch (e) {
+    console.error("🚨 Could not load facilities.geojson from either location.", e);
+    alert("Could not load facilities.geojson. Check file location/path in your repo.");
+    return;
+  }
+
   console.log("feature count:", data.features?.length);
 
   map.addSource("facilities", { type: "geojson", data });
@@ -200,21 +214,15 @@ map.on("load", async () => {
     type: "circle",
     source: "facilities",
     paint: {
-      // One color (selected vs context handled by opacity)
       "circle-color": "#4da3ff",
-
-      // Smaller overall + hub bump
       "circle-radius": radiusExpression(),
-
-      // Hybrid hide/dim behavior
       "circle-opacity": opacityExpression(),
-
-      "circle-stroke-width": 0.4,
-      "circle-stroke-color": "rgba(255,255,255,0.20)"
+      "circle-stroke-width": 0.35,
+      "circle-stroke-color": "rgba(255,255,255,0.18)"
     }
   });
 
-  // Fly to data bounds (cinematic settle)
+  // Fit to bounds so dots are immediately in view
   const bounds = new mapboxgl.LngLatBounds();
   for (const f of (data.features || [])) {
     const c = f?.geometry?.coordinates;
