@@ -73,15 +73,11 @@ html, body {
   left: 18px;
   bottom: 18px;
   z-index: 10;
-
   text-align: left;
   padding: 10px 12px;
   border-radius: 14px;
-
-  /* subtle glass panel so it's readable */
   background: rgba(0,0,0,0.25);
   backdrop-filter: blur(10px);
-
   pointer-events: none;
 }
 
@@ -113,81 +109,21 @@ html, body {
   box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
 }
 
+/* Selected facilities (blue) */
 .legend-dot--selected{
   background: rgba(77,163,255,0.95);
 }
 
+/* Context facilities (dim gray) */
 .legend-dot--context{
-  background: rgba(255,255,255,0.20);
+  background: rgba(255,255,255,0.28);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.10);
 }
 
+/* Intermodal hubs (purple + bigger) */
 .legend-dot--hub{
   width: 14px;
   height: 14px;
-  background: rgba(77,163,255,0.95);
+  background: rgba(184,107,255,0.95);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.18);
 }
-
-/* TOOLTIP */
-.tooltip {
-  position: absolute;
-  z-index: 20;
-  pointer-events: none;
-  max-width: 360px;
-  padding: 12px;
-  border-radius: 14px;
-  background: rgba(10, 14, 20, 0.92);
-  border: 1px solid rgba(255,255,255,0.14);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
-  font-size: 13px;
-  line-height: 1.25;
-}
-
-.tooltip .t-title {
-  font-weight: 850;
-  font-size: 14px;
-  margin-bottom: 6px;
-}
-
-.tooltip .t-loc {
-  font-size: 12px;
-  opacity: 0.78;
-  margin-bottom: 10px;
-}
-
-.tooltip .chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.tooltip .chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.12);
-  font-size: 12px;
-  opacity: 0.95;
-}
-
-.tooltip .divider {
-  height: 1px;
-  background: rgba(255,255,255,0.10);
-  margin: 10px 0;
-}
-
-.tooltip .rows {
-  display: grid;
-  gap: 6px;
-}
-
-.tooltip .row {
-  display: grid;
-  grid-template-columns: 112px 1fr;
-  gap: 10px;
-  align-items: baseline;
-}
-
-.tooltip .label { opacity: 0.65; }
-.tooltip .value { opacity: 0.95; }
